@@ -237,6 +237,11 @@ def move_session(
             )
         else:
             log("正文：无需搬动")
+            if result.plan.src_dir is None:
+                result.warnings.append(
+                    "projects/ 下没找到这个会话的 jsonl（可能正文还没落地），本次只改了数据库；"
+                    "之后正文进来时请再执行一次 wb-tool relocate 对齐目录名"
+                )
 
         if dry_run:
             log("[dry] 未做任何修改")

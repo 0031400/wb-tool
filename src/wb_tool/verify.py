@@ -9,7 +9,7 @@ from typing import Optional
 
 from . import accounts as acc
 from . import db as dbmod
-from .config import SIDEBAR_SNAPSHOT, default_data_dir
+from .config import SIDEBAR_SNAPSHOT, default_data_dir, slugify_cwd
 
 
 @dataclass
@@ -21,6 +21,7 @@ class VerifyReport:
     by_account: dict[str, int] = field(default_factory=dict)
     missing_files: list[str] = field(default_factory=list)
     orphan_files: list[str] = field(default_factory=list)
+    misplaced_files: list[str] = field(default_factory=list)
     latest_account: Optional[str] = None
     latest_source: str = ""
     snapshot_items: Optional[int] = None
@@ -57,12 +58,21 @@ def verify(data_dir: Optional[Path] = None, log=print) -> VerifyReport:
         rep.by_account = dbmod.session_counts(con)
         rep.total_sessions = con.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         db_ids = {r[0] for r in con.execute("SELECT id FROM sessions")}
+        cwd_of = {r[0]: (r[1] or "") for r in con.execute("SELECT id, cwd FROM sessions")}
     finally:
         con.close()
 
     files = _session_files(data_dir)
     rep.missing_files = sorted(sid for sid in db_ids if sid not in files)
     rep.orphan_files = sorted(sid for sid in files if sid not in db_ids)
+
+    # 正文所在目录名必须等于 slugify(cwd)，否则客户端按路径找不到，界面显示"暂无对话记录"
+    for sid, path in files.items():
+        cwd = cwd_of.get(sid)
+        if cwd is None:
+            continue
+        if path.parent.name != slugify_cwd(cwd):
+            rep.misplaced_files.append(f"{sid} 在 projects/{path.parent.name}，cwd={cwd}")
 
     hit = acc.latest_account(data_dir)
     if hit:
@@ -80,6 +90,11 @@ def verify(data_dir: Optional[Path] = None, log=print) -> VerifyReport:
         rep.problems.append(f"{len(rep.missing_files)} 条会话缺少 jsonl 正文")
     if rep.orphan_files:
         rep.problems.append(f"{len(rep.orphan_files)} 个 jsonl 在数据库里没有记录")
+    if rep.misplaced_files:
+        rep.problems.append(
+            f"{len(rep.misplaced_files)} 条会话的正文目录名与 cwd 对不上（界面会显示“暂无对话记录”），"
+            "执行 wb-tool relocate 修复"
+        )
     if len(rep.by_account) > 1:
         rep.problems.append(f"会话分散在 {len(rep.by_account)} 个账号下")
 
@@ -99,6 +114,9 @@ def describe(rep: VerifyReport) -> str:
         )
     if rep.snapshot_items is not None:
         lines.append(f"该账号侧边栏条目：{rep.snapshot_items}")
+    if rep.misplaced_files:
+        lines.append("正文位置不对：")
+        lines += [f"  - {p}" for p in rep.misplaced_files]
     if rep.problems:
         lines.append("问题：")
         lines += [f"  ! {p}" for p in rep.problems]

@@ -1,6 +1,6 @@
 [project]
 name = "wb-tool"
-version = "0.2.0"
+version = "0.3.0"
 description = "WorkBuddy（国际版）会话工具箱：导出/导入会话、改会话工作目录、把会话归属账号改写为当前登录账号"
 readme = "README.md"
 requires-python = ">=3.10"

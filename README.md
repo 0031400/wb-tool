@@ -16,6 +16,7 @@
 | `wb-tool import <包>` | 把包里的会话**合并**进本机 |
 | `wb-tool import <包> --replace` | 用包里的会话**整体替换**本机会话 |
 | `wb-tool move <UUID> <新目录>` | 改**某个会话**的工作目录（cwd） |
+| `wb-tool relocate` | 修复 `projects/<slug>` 目录名与 cwd 对不上（"暂无对话记录"） |
 | `wb-tool reassign` | 把所有会话的归属账号改成**当前登录账号** |
 | `wb-tool status` | 看本机账号分布、当前登录账号 |
 | `wb-tool verify` | 体检：文件与数据库是否对得上 |
@@ -83,6 +84,26 @@ uv run wb-tool import ./wb-session-65c65e14-*.zip --to-current
 ```
 
 单会话包只包含该会话的 `.jsonl`、它的 `tool-results/`、以及按会话 ID 命名的索引文件。
+
+### 界面显示“暂无对话记录”
+
+侧边栏能列出会话，点进去却是空的——九成是 **`projects/` 下的目录名和 `sessions.cwd` 对不上**。
+
+客户端是用 cwd 反推目录名的：`projects/<slugify(cwd)>/<sessionId>.jsonl`，路径找不到就当作没有历史，
+日志里会出现 `[SessionStore] deserializeSessionFromPath failed ... ENOENT`。
+
+```bash
+uv run wb-tool verify            # 会直接点名：哪条会话在哪个目录、cwd 是什么
+uv run wb-tool relocate --dry-run
+uv run wb-tool relocate          # 退出客户端后执行
+```
+
+`relocate` 会把目录名对齐到 cwd；同一目录里混了不同 cwd 的会话时，按会话拆开各搬各的。
+备份落在 `.wb-tool-backup/<时间戳>/`。
+
+**怎么撞上的**：先 `move` 改了 cwd，但那时正文还没落地（目录是空的，搬不动）；
+或者导入的包是按旧机器 cwd 算的 slug，导入后又用 `--remap-path` 改了 cwd。
+现在 `import` 结束时会自动跑一遍这个校验，`move` 找不到正文时也会提示补跑。
 
 ### 只改账号归属
 
@@ -175,6 +196,14 @@ uv run wb-tool import wb.zip --replace --to-current \
 | `--dry-run` | 只打印计划（改哪几处、搬哪些文件） |
 | `--force` | 跳过客户端运行检查 |
 | `--add-workspace/--no-add-workspace` | 是否把新目录写进 `workspaces`（默认写） |
+| `--yes` | 不再确认 |
+
+### relocate
+
+| 参数 | 说明 |
+| --- | --- |
+| `--dry-run` | 只打印要改的目录 |
+| `--force` | 跳过客户端运行检查 |
 | `--yes` | 不再确认 |
 
 ## "当前登录账号"怎么判定

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import db as dbmod
+from . import relocate as reloc
 from .config import (
     BACKUP_DIR_NAME,
     default_data_dir,
@@ -134,29 +135,13 @@ def apply_remap(con: sqlite3.Connection, mappings: list[tuple[str, str]]) -> int
 
 
 def relocate_project_dirs(data_dir: Path, con: sqlite3.Connection) -> list[tuple[str, str]]:
-    """cwd 变了之后，把 ``projects/<slug>`` 目录改成新的 slug。"""
-    projects = data_dir / "projects"
-    if not projects.is_dir():
-        return []
-    renamed: list[tuple[str, str]] = []
-    for d in sorted(p for p in projects.iterdir() if p.is_dir()):
-        sids = [f.stem for f in d.glob("*.jsonl")]
-        if not sids:
-            continue
-        row = con.execute("SELECT cwd FROM sessions WHERE id = ?", (sids[0],)).fetchone()
-        if not row or not row[0]:
-            continue
-        expected = slugify_cwd(row[0])
-        if expected == d.name:
-            continue
-        target = projects / expected
-        if target.exists():
-            shutil.copytree(d, target, dirs_exist_ok=True, copy_function=shutil.copy2)
-            shutil.rmtree(d)
-        else:
-            d.rename(target)
-        renamed.append((d.name, expected))
-    return renamed
+    """兼容旧接口：把 ``projects/<slug>`` 目录对齐到 cwd，返回 (旧名, 新名)。"""
+    rep = reloc.plan(data_dir, con)
+    if rep.relocations:
+        root = data_dir / BACKUP_DIR_NAME / "relocate"
+        root.mkdir(parents=True, exist_ok=True)
+        reloc.apply(data_dir, rep.relocations, root, log=lambda _m: None)
+    return [(r.src.name, r.dst.name) for r in rep.relocations]
 
 
 def import_bundle(
@@ -260,15 +245,19 @@ def import_bundle(
             result.skipped_files += skipped
             log(f"[dir]  {name:<22} 复制 {copied:>6}  跳过 {skipped:>6}")
 
-        # 3) cwd 变更后修正 projects 目录名
-        if not dry_run and (remap or result.remapped_sessions):
+        # 3) 让 projects 目录名与 cwd 对齐
+        #    导入的包是按"旧机器 cwd"算 slug 的，本机 cwd 可能已被 --remap-path 改写，
+        #    目录名对不上客户端就会显示"暂无对话记录"，所以这里无条件校验一遍。
+        if not dry_run:
             tcon = dbmod.connect(target_db)
             try:
-                result.relocated = relocate_project_dirs(data_dir, tcon)
+                rep = reloc.plan(data_dir, tcon)
             finally:
                 tcon.close()
-            for old, new in result.relocated:
-                log(f"[move] projects/{old} -> projects/{new}")
+            if rep.relocations:
+                backup_root.mkdir(parents=True, exist_ok=True)
+                reloc.apply(data_dir, rep.relocations, backup_root, log=log)
+                result.relocated = [(r.src.name, r.dst.name) for r in rep.relocations]
 
         # 4) 改写会话归属账号
         if account or to_current:

@@ -18,6 +18,7 @@ from .exporter import export as do_export
 from .importer import import_bundle
 from .listing import list_sessions
 from .mover import move_session
+from . import relocate as reloc
 from .reassign import reassign as do_reassign
 from .verify import describe, verify as do_verify
 
@@ -340,6 +341,47 @@ def cmd_move(
     console.print(
         f"[green]完成[/green] {res.title} 的工作目录 -> [bold]{res.new_cwd}[/bold]"
     )
+    if res.backup_dir:
+        console.print(f"备份目录：{res.backup_dir}")
+    console.print("建议接着执行：wb-tool verify")
+
+
+# --------------------------------------------------------------------------- relocate
+
+
+@app.command("relocate")
+def cmd_relocate(
+    force: bool = typer.Option(False, "--force", help="跳过客户端运行检查"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="只打印计划，不落盘"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="不再确认，直接执行"),
+) -> None:
+    """修复 projects 目录名与 cwd 不一致（界面显示“暂无对话记录”多半是这个）。"""
+    data_dir = _data_dir()
+    try:
+        if dry_run:
+            reloc.relocate(data_dir=data_dir, dry_run=True, log=console.print)
+            console.print("[yellow]dry-run：未做任何修改[/yellow]")
+            return
+
+        if not yes:
+            try:
+                ok = typer.confirm("将把 projects 下的目录名对齐到各自会话的 cwd，请先完全退出 WorkBuddy。继续？", default=False)
+            except (EOFError, KeyboardInterrupt):
+                ok = False
+            if not ok:
+                console.print("已取消")
+                raise typer.Exit(0)
+
+        res = reloc.relocate(data_dir=data_dir, force=force, log=console.print)
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _fail(str(exc))
+
+    console.print()
+    console.print(f"[green]完成[/green] 修复 {len(res.relocations)} 处")
+    if res.unknown:
+        console.print(f"[yellow]! {len(res.unknown)} 个会话在数据库里没有记录，未处理[/yellow]")
     if res.backup_dir:
         console.print(f"备份目录：{res.backup_dir}")
     console.print("建议接着执行：wb-tool verify")
