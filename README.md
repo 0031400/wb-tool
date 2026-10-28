@@ -1,6 +1,6 @@
-# wd-move
+# wb-tool
 
-把 **WorkBuddy（国际版）** 的会话搬来搬去，并把会话归属账号统一成**当前登录账号**。
+把 **WorkBuddy（国际版）** 的会话搬来搬去、改某个会话的工作目录，并把会话归属账号统一成**当前登录账号**。
 
 - 基于 [uv](https://docs.astral.sh/uv/)，Python 3.10
 - 只依赖 `typer` + `rich`
@@ -10,14 +10,15 @@
 
 | 命令 | 作用 |
 | --- | --- |
-| `wd-move list` | 列出所有会话（标题 + UUID） |
-| `wd-move export` | 导出**全部**会话 |
-| `wd-move export --session <UUID>` | 导出**某次**会话（可多次 `-s`） |
-| `wd-move import <包>` | 把包里的会话**合并**进本机 |
-| `wd-move import <包> --replace` | 用包里的会话**整体替换**本机会话 |
-| `wd-move reassign` | 把所有会话的归属账号改成**当前登录账号** |
-| `wd-move status` | 看本机账号分布、当前登录账号 |
-| `wd-move verify` | 体检：文件与数据库是否对得上 |
+| `wb-tool list` | 列出所有会话（标题 + UUID） |
+| `wb-tool export` | 导出**全部**会话 |
+| `wb-tool export --session <UUID>` | 导出**某次**会话（可多次 `-s`） |
+| `wb-tool import <包>` | 把包里的会话**合并**进本机 |
+| `wb-tool import <包> --replace` | 用包里的会话**整体替换**本机会话 |
+| `wb-tool move <UUID> <新目录>` | 改**某个会话**的工作目录（cwd） |
+| `wb-tool reassign` | 把所有会话的归属账号改成**当前登录账号** |
+| `wb-tool status` | 看本机账号分布、当前登录账号 |
+| `wb-tool verify` | 体检：文件与数据库是否对得上 |
 
 ## 它到底改了什么
 
@@ -34,37 +35,38 @@ WorkBuddy 的数据根目录是 `~/.workbuddy-ai`（Windows 下 `C:\Users\<你>\
 所以：
 
 - **迁移** = 搬 `workbuddy.db` 快照 + 上述目录；
-- **改账号** = `UPDATE sessions SET user_id = <当前账号>` + 重建当前账号的侧边栏快照（否则界面上看不到）。
+- **改账号** = `UPDATE sessions SET user_id = <当前账号>` + 重建当前账号的侧边栏快照（否则界面上看不到）；
+- **改工作目录** = `UPDATE sessions SET cwd = <新目录>` + 把 `projects/<旧 slug>/` 里属于该会话的正文搬到 `<新 slug>/` + 往 `workspaces` 加一行 + 改侧边栏条目的 `space.name`。
 
 `logs/`、`cache/`、`app/`、`binaries/`、`security/`、`local_storage/`、`device-id`、`keyblob` 等本机运行时/鉴权数据**不迁移**。
 
 ## 安装
 
 ```bash
-cd wd-move
+cd wb-tool
 uv sync
 ```
 
-之后用 `uv run wd-move ...`，或 `uv tool install .` 后直接用 `wd-move ...`。
+之后用 `uv run wb-tool ...`，或 `uv tool install .` 后直接用 `wb-tool ...`。
 
 ## 常用流程
 
 ### 看有哪些会话
 
 ```bash
-uv run wd-move list            # 标题 + UUID + 账号 + 时间
-uv run wd-move list -n 20      # 只看前 20 条
-uv run wd-move list --json     # 给脚本用
+uv run wb-tool list            # 标题 + UUID + 账号 + 时间
+uv run wb-tool list -n 20      # 只看前 20 条
+uv run wb-tool list --json     # 给脚本用
 ```
 
 ### 全部会话搬家
 
 ```bash
 # 旧机器
-uv run wd-move export --zip -o D:/transfer/wb.zip
+uv run wb-tool export --zip -o D:/transfer/wb.zip
 
 # 新机器（先完全退出 WorkBuddy）
-uv run wd-move import D:/transfer/wb.zip --replace --to-current
+uv run wb-tool import D:/transfer/wb.zip --replace --to-current
 ```
 
 `--replace` = 先清空本机会话记录再写入，适合"整机搬到新机器、不要旧数据"的场景；
@@ -74,10 +76,10 @@ uv run wd-move import D:/transfer/wb.zip --replace --to-current
 
 ```bash
 # 旧机器：导出单条
-uv run wd-move export --session 65c65e14-89db-4acb-a672-0bb89a5ca5f0 --zip
+uv run wb-tool export --session 65c65e14-89db-4acb-a672-0bb89a5ca5f0 --zip
 
 # 新机器：导入（单会话包同样用 import）
-uv run wd-move import ./wb-session-65c65e14-*.zip --to-current
+uv run wb-tool import ./wb-session-65c65e14-*.zip --to-current
 ```
 
 单会话包只包含该会话的 `.jsonl`、它的 `tool-results/`、以及按会话 ID 命名的索引文件。
@@ -85,14 +87,49 @@ uv run wd-move import ./wb-session-65c65e14-*.zip --to-current
 ### 只改账号归属
 
 ```bash
-uv run wd-move reassign --dry-run   # 先看会改多少条
-uv run wd-move reassign --yes       # 改成当前登录账号
+uv run wb-tool reassign --dry-run   # 先看会改多少条
+uv run wb-tool reassign --yes       # 改成当前登录账号
 ```
+
+### 改某个会话的工作目录
+
+会话的 cwd 在创建时就定死了，客户端界面里没有"改已有会话工作目录"的入口。
+要改只能动数据，`move` 会把四处一起改好：
+
+```bash
+# 1) 完全退出 WorkBuddy（否则数据库会被客户端回写覆盖）
+# 2) 先看计划
+uv run wb-tool move e2c7ae29 D:/work/new-proj --dry-run
+
+# 3) 真改（UUID 可以只写前几位，唯一匹配即可）
+uv run wb-tool move e2c7ae29 D:/work/new-proj
+
+# 4) 体检
+uv run wb-tool verify
+```
+
+它做的事：
+
+| 位置 | 动作 |
+| --- | --- |
+| `sessions.cwd` | 改成新路径（正斜杠形式，和客户端一致） |
+| `projects/<旧 slug>/` | 该目录**只含这一个会话**时整个改名；还有别的会话时只搬 `<sid>.jsonl`、`<sid>.file-rollback.ndjson`、`<sid>/` 这几项，其余原地不动 |
+| `workspaces.path` | 新增新目录（保留旧目录，其它会话可能还在用） |
+| `<账号>/sidebar-list-snapshot.json` | 该条目的 `space.name` 改成新目录 |
+
+改之前的 `workbuddy.db` 和侧边栏快照会备份到 `.wb-tool-backup/<时间戳>/`，
+同目录下的 `move-<sid>.json` 记录了旧/新路径与搬动了哪些文件，想退回照着搬回去即可。
+
+注意：
+
+- 目标目录**不存在**只给警告、不自动创建（防止手滑打错路径建出一堆空目录）；
+- 会话正文和各类索引里残留的旧绝对路径是历史记录，不改写；
+- 客户端里那条会话的历史消息还在，只是"工作目录"变成了新路径，之后读写文件都在新目录。
 
 ### 体检
 
 ```bash
-uv run wd-move verify
+uv run wb-tool verify
 ```
 
 ## 参数速查
@@ -124,12 +161,21 @@ uv run wd-move verify
 跨机器换了用户名：
 
 ```bash
-uv run wd-move import wb.zip --replace --to-current \
+uv run wb-tool import wb.zip --replace --to-current \
   --remap-path "C:/Users/lxz=C:/Users/newuser" \
   --remap-path "D:/file=D:/work"
 ```
 
 导入时会自动把 `projects/<旧 slug>` 目录改名成新 `cwd` 对应的 slug，侧边栏快照里的工作区路径也一并更新。
+
+### move
+
+| 参数 | 说明 |
+| --- | --- |
+| `--dry-run` | 只打印计划（改哪几处、搬哪些文件） |
+| `--force` | 跳过客户端运行检查 |
+| `--add-workspace/--no-add-workspace` | 是否把新目录写进 `workspaces`（默认写） |
+| `--yes` | 不再确认 |
 
 ## "当前登录账号"怎么判定
 
@@ -145,7 +191,7 @@ uv run wd-move import wb.zip --replace --to-current \
 
 - 导出用 SQLite `backup` API 生成一致性快照，不会拷到写了一半的库；
 - 写库前先 `PRAGMA integrity_check`；
-- 改库前把 `workbuddy.db` 备份到 `.wd-move-backup/<时间戳>/`；
+- 改库前把 `workbuddy.db` 备份到 `.wb-tool-backup/<时间戳>/`；
 - 覆盖任何本机文件前都会先备份到同一目录；
 - 客户端仍在运行直接拒绝执行（`--force` 才跳过；`--dry-run` 不受限）；
 - 侧边栏快照用临时文件 + 原子替换写入。
@@ -154,7 +200,7 @@ uv run wd-move import wb.zip --replace --to-current \
 
 ```bash
 # 关掉 WorkBuddy 后，把备份的库拷回去即可
-cp ~/.workbuddy-ai/.wd-move-backup/<时间戳>/workbuddy.db ~/.workbuddy-ai/workbuddy.db
+cp ~/.workbuddy-ai/.wb-tool-backup/<时间戳>/workbuddy.db ~/.workbuddy-ai/workbuddy.db
 ```
 
 ## 限制

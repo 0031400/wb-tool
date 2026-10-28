@@ -61,7 +61,9 @@ UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 
 DB_NAME = "workbuddy.db"
 SIDEBAR_SNAPSHOT = "sidebar-list-snapshot.json"
-BACKUP_DIR_NAME = ".wd-move-backup"
+BACKUP_DIR_NAME = ".wb-tool-backup"
+#: 改名前（wd-move）留下的备份目录，仅用于提示，不自动迁移
+LEGACY_BACKUP_DIR_NAME = ".wd-move-backup"
 
 
 def default_data_dir() -> Path:

@@ -94,6 +94,54 @@ def build_items(
     return items
 
 
+def update_session_space(
+    data_dir: Path,
+    session_id: str,
+    new_cwd: str,
+    backup_root: Optional[Path] = None,
+) -> list[Path]:
+    """把各账号快照里该会话的 ``space.name`` 改成新目录，返回被改写的快照文件。
+
+    只动命中的那一条，保留 isPinned / state 等字段，也不重排顺序。
+    """
+    changed: list[Path] = []
+    for d in account_dirs(data_dir):
+        path = d / SIDEBAR_SNAPSHOT
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, ValueError):
+            continue
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            continue
+
+        hit = False
+        for it in items:
+            if not isinstance(it, dict) or it.get("id") != session_id:
+                continue
+            space = it.get("space")
+            space = dict(space) if isinstance(space, dict) else {"type": "local"}
+            if space.get("name") == new_cwd:
+                continue
+            space["name"] = new_cwd
+            it["space"] = space
+            hit = True
+
+        if not hit:
+            continue
+        if backup_root is not None:
+            backup_root.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup_root / f"sidebar-{d.name}.json")
+        data["savedAt"] = int(time.time() * 1000)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+        changed.append(path)
+    return changed
+
+
 def write_snapshot(
     data_dir: Path,
     target_user: str,

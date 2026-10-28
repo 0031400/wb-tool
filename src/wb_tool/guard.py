@@ -38,7 +38,7 @@ def running_processes() -> list[str]:
             return []
         for line in out.splitlines():
             low = line.lower()
-            if "wd-move" in low or "wd_move" in low:
+            if "wb-tool" in low or "wb_tool" in low or "wd-move" in low or "wd_move" in low:
                 continue
             if any(h in low for h in APP_HINTS):
                 names.append(line.strip())

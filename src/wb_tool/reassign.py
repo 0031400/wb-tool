@@ -56,7 +56,7 @@ def _merge_memory(data_dir: Path, target: str, backup_root: Path) -> bool:
     backup_root.mkdir(parents=True, exist_ok=True)
     if target_file.is_file():
         shutil.copy2(target_file, backup_root / target_file.name)
-    block = ["", f"<!-- merged by wd-move {datetime.now():%Y-%m-%d %H:%M:%S} -->", *extra, ""]
+    block = ["", f"<!-- merged by wb-tool {datetime.now():%Y-%m-%d %H:%M:%S} -->", *extra, ""]
     target_file.parent.mkdir(parents=True, exist_ok=True)
     target_file.write_text(existing.rstrip("\n") + "\n" + "\n".join(block), encoding="utf-8")
     return True

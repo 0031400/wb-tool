@@ -75,7 +75,7 @@ def read_manifest(bundle: Path) -> dict:
         raise ValueError(f"manifest 缺少字段：{sorted(missing)}")
     if int(data.get("format", 0)) > BUNDLE_FORMAT:
         raise ValueError(
-            f"迁移包格式 v{data['format']} 比当前工具（v{BUNDLE_FORMAT}）更新，请升级 wd-move"
+            f"迁移包格式 v{data['format']} 比当前工具（v{BUNDLE_FORMAT}）更新，请升级 wb-tool"
         )
     return data
 
@@ -179,7 +179,7 @@ def import_bundle(
 
     tmp_dir: Optional[Path] = None
     if bundle_path.is_file():
-        tmp_dir = Path(tempfile.mkdtemp(prefix="wd-move-"))
+        tmp_dir = Path(tempfile.mkdtemp(prefix="wb-tool-"))
         bundle = _resolve_bundle(bundle_path, tmp_dir)
     else:
         bundle = _resolve_bundle(bundle_path, data_dir)

@@ -17,13 +17,14 @@ from .config import default_data_dir, human_bytes
 from .exporter import export as do_export
 from .importer import import_bundle
 from .listing import list_sessions
+from .mover import move_session
 from .reassign import reassign as do_reassign
 from .verify import describe, verify as do_verify
 
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    help="WorkBuddy（国际版）会话迁移工具：导出/导入会话，并把会话归属账号改成当前登录账号。",
+    help="WorkBuddy（国际版）会话工具：导出/导入会话、改会话工作目录，并把会话归属账号改成当前登录账号。",
 )
 console = Console()
 _STATE: dict[str, Optional[Path]] = {"data_dir": None}
@@ -31,7 +32,7 @@ _STATE: dict[str, Optional[Path]] = {"data_dir": None}
 
 def _ver_cb(value: bool) -> None:
     if value:
-        console.print(f"wd-move {__version__}")
+        console.print(f"wb-tool {__version__}")
         raise typer.Exit()
 
 
@@ -140,7 +141,7 @@ def cmd_list(
 
     console.print(
         f"合计 {human_bytes(sum(r.bytes for r in rows))}；"
-        "导出单条：wd-move export --session <UUID>"
+        "导出单条：wb-tool export --session <UUID>"
     )
 
 
@@ -225,7 +226,7 @@ def cmd_export(
     console.print(f"迁移包：[bold]{res.bundle}[/bold]")
     if res.archive:
         console.print(f"压缩包：[bold]{res.archive}[/bold]")
-    console.print("在另一台机器执行：wd-move import <迁移包路径> --to-current")
+    console.print("在另一台机器执行：wb-tool import <迁移包路径> --to-current")
 
 
 # --------------------------------------------------------------------------- import
@@ -283,7 +284,65 @@ def cmd_import(
             f"会话归属已改为 [bold]{res.reassign.target}[/bold]"
             f"（{res.reassign.sessions_changed} 条）"
         )
-    console.print("建议接着执行：wd-move verify")
+    console.print("建议接着执行：wb-tool verify")
+
+
+# --------------------------------------------------------------------------- move
+
+
+@app.command("move")
+def cmd_move(
+    session: str = typer.Argument(..., help="会话 UUID（可只写前几位）"),
+    new_cwd: str = typer.Argument(..., help="新的工作目录，如 D:/work/new-proj"),
+    add_workspace: bool = typer.Option(
+        True, "--add-workspace/--no-add-workspace", help="把新目录写进最近打开的工作区列表"
+    ),
+    force: bool = typer.Option(False, "--force", help="跳过客户端运行检查"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="只打印计划，不落盘"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="不再确认，直接执行"),
+) -> None:
+    """把某个会话的工作目录改到新路径（数据库 + 正文目录 + 侧边栏一起改）。"""
+    data_dir = _data_dir()
+    try:
+        if dry_run:
+            move_session(session, new_cwd, data_dir=data_dir, dry_run=True, log=console.print)
+            console.print("[yellow]dry-run：未做任何修改[/yellow]")
+            return
+
+        if not yes:
+            try:
+                ok = typer.confirm(
+                    f"将把会话 {session} 的工作目录改为 {new_cwd}，请先完全退出 WorkBuddy。继续？",
+                    default=False,
+                )
+            except (EOFError, KeyboardInterrupt):
+                ok = False
+            if not ok:
+                console.print("已取消")
+                raise typer.Exit(0)
+
+        res = move_session(
+            session,
+            new_cwd,
+            data_dir=data_dir,
+            force=force,
+            add_workspace=add_workspace,
+            log=lambda m: console.print(m),
+        )
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _fail(str(exc))
+
+    console.print()
+    for warn in res.warnings:
+        console.print(f"[yellow]! {warn}[/yellow]")
+    console.print(
+        f"[green]完成[/green] {res.title} 的工作目录 -> [bold]{res.new_cwd}[/bold]"
+    )
+    if res.backup_dir:
+        console.print(f"备份目录：{res.backup_dir}")
+    console.print("建议接着执行：wb-tool verify")
 
 
 # --------------------------------------------------------------------------- reassign
@@ -347,7 +406,7 @@ def cmd_reassign(
     )
     if res.backup:
         console.print(f"数据库备份：{res.backup}")
-    console.print("建议接着执行：wd-move verify")
+    console.print("建议接着执行：wb-tool verify")
 
 
 # --------------------------------------------------------------------------- verify

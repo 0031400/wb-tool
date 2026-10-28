@@ -255,7 +255,7 @@ def export(
 
     current = acc.current_account(data_dir)
     manifest = {
-        "tool": "wd-move",
+        "tool": "wb-tool",
         "tool_version": __version__,
         "format": BUNDLE_FORMAT,
         "kind": "sessions" if only else "all",
