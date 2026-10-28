@@ -1,0 +1,4 @@
+/.venv/
+/.workbuddy-ai/
+/wb-*
+__pycache__
